@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Virtual Machine - 8-bit CPU Emulator</title>
+    <style>
+        /* Legacy-compatible CSS with minimal memory footprint */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        .editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 2px solid #333;
+        }
+        
+        .emulator-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            background: #2d2d2d;
+            padding: 10px;
+            border-bottom: 1px solid #555;
+            font-weight: bold;
+        }
+        
+        .code-editor {
+            flex: 1;
+            background: #252526;
+            border: none;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 15px;
+            resize: none;
+            outline: none;
+        }
+        
+        .controls {
+            background: #2d2d2d;
+            padding: 10px;
+            border-top: 1px solid #555;
+            text-align: center;
+        }
+        
+        .btn {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 0 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        
+        .btn:hover {
+            background: #005a9e;
+        }
+        
+        .btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        .registers {
+            background: #252526;
+            padding: 15px;
+            border-bottom: 1px solid #555;
+        }
+        
+        .register-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        
+        .register {
+            background: #2d2d2d;
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #555;
+        }
+        
+        .register-label {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        
+        .register-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4ec9b0;
+        }
+        
+        .memory-view {
+            flex: 1;
+            background: #252526;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+        }
+        
+        .memory-line {
+            display: flex;
+            margin-bottom: 2px;
+        }
+        
+        .memory-address {
+            color: #569cd6;
+            width: 60px;
+            margin-right: 10px;
+        }
+        
+        .memory-data {
+            color: #d4d4d4;
+            letter-spacing: 1px;
+        }
+        
+        .memory-ascii {
+            color: #888;
+            margin-left: 20px;
+        }
+        
+        .display-panel {
+            background: #252526;
+            padding: 15px;
+            border-top: 1px solid #555;
+            text-align: center;
+        }
+        
+        .display-canvas {
+            border: 1px solid #555;
+            background: #000;
+        }
+        
+        .status-bar {
+            background: #007acc;
+            color: white;
+            padding: 5px 15px;
+            font-size: 12px;
+            text-align: center;
+        }
+        
+        /* Responsive design for smaller screens */
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .editor-panel,
+            .emulator-panel {
+                flex: none;
+                height: 50vh;
+            }
+            
+            .register-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Editor Panel -->
+        <div class="editor-panel">
+            <div class="panel-header">Assembly Code Editor</div>
+            <textarea class="code-editor" id="codeEditor" placeholder="Enter your assembly code here...&#10;&#10;Example:&#10;MOV A, 42&#10;MOV B, 10&#10;ADD A, B&#10;HLT">MOV A, 42
+MOV B, 10
+ADD A, B
+HLT</textarea>
+            <div class="controls">
+                <button class="btn" id="assembleBtn">Assemble</button>
+                <button class="btn" id="runBtn">Run</button>
+                <button class="btn" id="stepBtn">Step</button>
+                <button class="btn" id="resetBtn">Reset</button>
+                <button class="btn" id="clearBtn">Clear</button>
+                <button class="btn" id="helpBtn" style="background: #28a745;">Help</button>
+                <button class="btn" id="samplesBtn" style="background: #6f42c1;">Samples</button>
+            </div>
+        </div>
+        
+        <!-- Emulator Panel -->
+        <div class="emulator-panel">
+            <div class="panel-header">CPU Emulator</div>
+            
+            <!-- Registers -->
+            <div class="registers">
+                <div class="register-grid">
+                    <div class="register">
+                        <div class="register-label">A Register</div>
+                        <div class="register-value" id="regA">00</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">B Register</div>
+                        <div class="register-value" id="regB">00</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">C Register</div>
+                        <div class="register-value" id="regC">00</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">D Register</div>
+                        <div class="register-value" id="regD">00</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">Program Counter</div>
+                        <div class="register-value" id="regPC">0000</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">Stack Pointer</div>
+                        <div class="register-value" id="regSP">FFFF</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">Flags</div>
+                        <div class="register-value" id="regFlags">00</div>
+                    </div>
+                    <div class="register">
+                        <div class="register-label">Cycles</div>
+                        <div class="register-value" id="regCycles">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Memory View -->
+            <div class="memory-view" id="memoryView">
+                <!-- Memory content will be populated by JavaScript -->
+            </div>
+            
+            <!-- Display Panel -->
+            <div class="display-panel">
+                <canvas class="display-canvas" id="displayCanvas" width="256" height="128"></canvas>
+                <div style="margin-top: 10px; font-size: 11px; color: #888;">
+                    Graphics Memory: 0x8000-0x8FFF (64x32 pixels)
+                </div>
+                <div style="margin-top: 5px; font-size: 10px; color: #666;">
+                    Memory Map: 0x0000-0x7FFF (Program) | 0x8000-0x8FFF (Graphics) | 0xF000-0xFFFF (Stack)
+                </div>
+            </div>
+            
+            <!-- Status Bar -->
+            <div class="status-bar" id="statusBar">
+                Ready - Enter assembly code and click Assemble
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tiny Virtual Machine - 8-bit CPU Emulator
+        // Legacy Browser Compatible (IE11) - ES5 JavaScript only
+        // Memory Efficient - Under 10MB RAM usage
+        // Single HTML file with inline CSS + JS
+        
+        (function() {
+            'use strict';
+            
+            // CPU Architecture Constants
+            var MEMORY_SIZE = 65536;        // 64KB memory
+            var STACK_START = 0xFFFF;      // Stack starts at top of memory
+            var DISPLAY_START = 0x8000;    // Graphics memory region
+            var DISPLAY_WIDTH = 64;
+            var DISPLAY_HEIGHT = 32;
+            
+            // Opcode definitions (8-bit instructions)
+            var OPCODES = {
+                NOP: 0x00,     // No operation
+                HLT: 0x01,     // Halt execution
+                MOV: 0x02,     // Move data
+                ADD: 0x03,     // Add registers
+                SUB: 0x04,     // Subtract registers
+                CMP: 0x05,     // Compare registers
+                JMP: 0x06,     // Jump to address
+                JZ: 0x07,      // Jump if zero
+                JNZ: 0x08,     // Jump if not zero
+                LOAD: 0x09,    // Load from memory
+                STORE: 0x0A,   // Store to memory
+                PUSH: 0x0B,    // Push to stack
+                POP: 0x0C,     // Pop from stack
+                CALL: 0x0D,    // Call subroutine
+                RET: 0x0E,     // Return from subroutine
+                INC: 0x0F,     // Increment register
+                DEC: 0x10      // Decrement register
+            };
+            
+            // CPU State
+            var cpu = {
+                registers: {
+                    A: 0,      // Accumulator
+                    B: 0,      // General purpose
+                    C: 0,      // General purpose
+                    D: 0,      // General purpose
+                    PC: 0,     // Program Counter
+                    SP: STACK_START,  // Stack Pointer
+                    FLAGS: 0   // Status flags
+                },
+                memory: null,  // Will be initialized as Uint8Array
+                running: false,
+                cycles: 0,
+                stepMode: false
+            };
+            
+                         // UI Elements
+             var elements = {
+                 codeEditor: null,
+                 assembleBtn: null,
+                 runBtn: null,
+                 stepBtn: null,
+                 resetBtn: null,
+                 clearBtn: null,
+                 helpBtn: null,
+                 samplesBtn: null,
+                 regA: null,
+                 regB: null,
+                 regC: null,
+                 regD: null,
+                 regPC: null,
+                 regSP: null,
+                 regFlags: null,
+                 regCycles: null,
+                 memoryView: null,
+                 displayCanvas: null,
+                 statusBar: null
+             };
+            
+            // Execution variables
+            var executionInterval = null;
+            var executionSpeed = 100; // milliseconds per instruction
+            
+            // Performance monitoring
+            var performanceStats = {
+                startTime: 0,
+                instructionsExecuted: 0,
+                memoryAccesses: 0,
+                errors: 0,
+                warnings: 0
+            };
+            
+            // Initialize the virtual machine
+            function initVM() {
+                // Initialize memory with Uint8Array for efficiency
+                cpu.memory = new Uint8Array(MEMORY_SIZE);
+                
+                // Initialize display canvas
+                var canvas = document.getElementById('displayCanvas');
+                var ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Get UI elements
+                elements.codeEditor = document.getElementById('codeEditor');
+                elements.assembleBtn = document.getElementById('assembleBtn');
+                elements.runBtn = document.getElementById('runBtn');
+                elements.stepBtn = document.getElementById('stepBtn');
+                elements.resetBtn = document.getElementById('resetBtn');
+                                 elements.clearBtn = document.getElementById('clearBtn');
+                 elements.helpBtn = document.getElementById('helpBtn');
+                 elements.samplesBtn = document.getElementById('samplesBtn');
+                 elements.regA = document.getElementById('regA');
+                elements.regB = document.getElementById('regB');
+                elements.regC = document.getElementById('regC');
+                elements.regD = document.getElementById('regD');
+                elements.regPC = document.getElementById('regPC');
+                elements.regSP = document.getElementById('regSP');
+                elements.regFlags = document.getElementById('regFlags');
+                elements.regCycles = document.getElementById('regCycles');
+                elements.memoryView = document.getElementById('memoryView');
+                elements.displayCanvas = document.getElementById('displayCanvas');
+                elements.statusBar = document.getElementById('statusBar');
+                
+                // Bind event handlers
+                elements.assembleBtn.onclick = assembleCode;
+                elements.runBtn.onclick = runEmulator;
+                elements.stepBtn.onclick = stepEmulator;
+                elements.resetBtn.onclick = resetEmulator;
+                elements.clearBtn.onclick = clearCode;
+                elements.helpBtn.onclick = showAssemblyHelp;
+                elements.samplesBtn.onclick = showSamplePrograms;
+                
+                // Initialize UI
+                updateRegisters();
+                updateMemoryView();
+                updateStatus('Virtual Machine initialized. Enter assembly code and click Assemble.');
+            }
+            
+            // Enhanced assembler with validation
+            function assembleCode() {
+                try {
+                    var code = elements.codeEditor.value.trim();
+                    if (!code) {
+                        updateStatus('Error: No code to assemble');
+                        return;
+                    }
+                    
+                    // Validate code before assembly
+                    var validation = validateAssemblyCode(code);
+                    if (validation.errors.length > 0) {
+                        var errorMsg = 'Assembly validation failed:\n' + validation.errors.join('\n');
+                        alert(errorMsg);
+                        updateStatus('Assembly failed - check errors above');
+                        return;
+                    }
+                    
+                    if (validation.warnings.length > 0) {
+                        var warningMsg = 'Warnings (code may not work as expected):\n' + validation.warnings.join('\n');
+                        if (!confirm(warningMsg + '\n\nContinue with assembly?')) {
+                            return;
+                        }
+                    }
+                    
+                    // Clear memory
+                    for (var i = 0; i < MEMORY_SIZE; i++) {
+                        cpu.memory[i] = 0;
+                    }
+                    
+                    var lines = code.split('\n');
+                    var address = 0;
+                    var labels = {};
+                    var instructions = [];
+                    
+                    // First pass: collect labels and build instruction list
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i].trim();
+                        if (!line || line.indexOf(';') === 0) continue; // Skip empty lines and comments
+                        
+                        // Check for label
+                        if (line.indexOf(':') !== -1) {
+                            var parts = line.split(':');
+                            var labelName = parts[0].trim();
+                            
+                            // Validate label name
+                            if (!labelName.match(/^[A-Za-z_][A-Za-z0-9_]*$/)) {
+                                throw new Error('Invalid label name "' + labelName + '" at line ' + (i + 1));
+                            }
+                            
+                            labels[labelName] = address;
+                            line = parts[1].trim();
+                            if (!line) continue;
+                        }
+                        
+                        instructions.push({ line: line, address: address });
+                        address += getInstructionSize(line);
+                        
+                        // Check for program size limit
+                        if (address > 0x7FFF) {
+                            throw new Error('Program too large! Maximum size is 32KB (0x8000 bytes)');
+                        }
+                    }
+                    
+                    // Second pass: assemble instructions
+                    address = 0;
+                    for (var i = 0; i < instructions.length; i++) {
+                        var inst = instructions[i];
+                        var assembled = assembleInstruction(inst.line, labels, address);
+                        
+                        if (assembled) {
+                            for (var j = 0; j < assembled.length; j++) {
+                                cpu.memory[address + j] = assembled[j];
+                            }
+                            address += assembled.length;
+                        }
+                    }
+                    
+                    // Reset CPU state
+                    resetEmulator();
+                    updateStatus('Code assembled successfully. Program loaded at address 0x0000 (' + address + ' bytes)');
+                    
+                    // Debug: Log the first few bytes of memory
+                    console.log('Memory after assembly:');
+                    for (var i = 0; i < 16; i++) {
+                        console.log('0x' + i.toString(16).padStart(4, '0') + ': 0x' + cpu.memory[i].toString(16).padStart(2, '0'));
+                    }
+                    
+                    updateMemoryView();
+                    
+                } catch (error) {
+                    updateStatus('Assembly error: ' + error.message);
+                    console.error('Assembly error:', error);
+                }
+            }
+            
+            // Assemble a single instruction
+            function assembleInstruction(line, labels, address) {
+                var parts = line.split(/[\s,]+/);
+                var mnemonic = parts[0].toUpperCase();
+                var opcode = OPCODES[mnemonic];
+                
+                if (opcode === undefined) {
+                    throw new Error('Unknown instruction: "' + mnemonic + '" at address 0x' + address.toString(16).toUpperCase().padStart(4, '0'));
+                }
+                
+                var bytes = [opcode];
+                
+                switch (mnemonic) {
+                    case 'MOV':
+                        if (parts.length !== 3) throw new Error('MOV requires 2 operands (register and value)');
+                        var dest = getRegisterCode(parts[1]);
+                        var src = getOperandValue(parts[2], labels);
+                        bytes.push(dest);
+                        bytes.push(src & 0xFF);
+                        break;
+                        
+                    case 'ADD':
+                    case 'SUB':
+                    case 'CMP':
+                        if (parts.length !== 3) throw new Error(mnemonic + ' requires 2 operands (register and register/immediate)');
+                        bytes.push(getRegisterCode(parts[1]));
+                        // Check if second operand is register or immediate value
+                        if (parts[2].match(/^[ABCD]$/i)) {
+                            // Register-to-register operation
+                            bytes.push(getRegisterCode(parts[2]));
+                        } else {
+                            // Register-to-immediate operation
+                            var immValue = getOperandValue(parts[2], labels);
+                            bytes.push(immValue & 0xFF);
+                        }
+                        break;
+                        
+                    case 'JMP':
+                    case 'JZ':
+                    case 'JNZ':
+                        if (parts.length !== 2) throw new Error(mnemonic + ' requires 1 operand (label or address)');
+                        var target = getOperandValue(parts[1], labels);
+                        bytes.push(target & 0xFF);
+                        bytes.push((target >> 8) & 0xFF);
+                        break;
+                        
+                    case 'LOAD':
+                    case 'STORE':
+                        if (parts.length !== 3) throw new Error(mnemonic + ' requires 2 operands (register and address)');
+                        bytes.push(getRegisterCode(parts[1]));
+                        // Check if second operand is register or immediate address
+                        if (parts[2].match(/^[ABCD]$/i)) {
+                            // Register-to-register operation (address in register)
+                            bytes.push(getRegisterCode(parts[2]));
+                            bytes.push(0x00); // High byte for register addressing
+                        } else {
+                            // Immediate address
+                            var memAddr = getOperandValue(parts[2], labels);
+                            bytes.push(memAddr & 0xFF);
+                            bytes.push((memAddr >> 8) & 0xFF);
+                        }
+                        break;
+                        
+                    case 'PUSH':
+                    case 'POP':
+                    case 'INC':
+                    case 'DEC':
+                        if (parts.length !== 2) throw new Error(mnemonic + ' requires 1 operand (register)');
+                        bytes.push(getRegisterCode(parts[1]));
+                        break;
+                        
+                    case 'CALL':
+                        if (parts.length !== 2) throw new Error('CALL requires 1 operand (label or address)');
+                        var callTarget = getOperandValue(parts[1], labels);
+                        bytes.push(callTarget & 0xFF);
+                        bytes.push((callTarget >> 8) & 0xFF);
+                        break;
+                        
+                    case 'NOP':
+                    case 'HLT':
+                    case 'RET':
+                        // No operands needed
+                        break;
+                        
+                    default:
+                        throw new Error('Unsupported instruction: "' + mnemonic + '". This should not happen - please report this error.');
+                }
+                
+                return bytes;
+            }
+            
+            // Get register code for assembly
+            function getRegisterCode(reg) {
+                var regMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+                var code = regMap[reg.toUpperCase()];
+                if (code === undefined) throw new Error('Invalid register: "' + reg + '". Valid registers are A, B, C, D');
+                return code;
+            }
+            
+            // Get operand value (immediate or label)
+            function getOperandValue(operand, labels) {
+                // Check if it's a label
+                if (labels[operand] !== undefined) {
+                    return labels[operand];
+                }
+                
+                // Check if it's a hex number
+                if (operand.indexOf('0x') === 0) {
+                    return parseInt(operand, 16);
+                }
+                
+                // Check if it's a decimal number
+                if (!isNaN(operand)) {
+                    return parseInt(operand, 10);
+                }
+                
+                throw new Error('Invalid operand: "' + operand + '". Expected label, hex number (0x...), or decimal number');
+            }
+            
+            // Get instruction size for address calculation
+            function getInstructionSize(line) {
+                var parts = line.split(/[\s,]+/);
+                var mnemonic = parts[0].toUpperCase();
+                
+                switch (mnemonic) {
+                    case 'NOP':
+                    case 'HLT':
+                    case 'RET':
+                        return 1;
+                    case 'PUSH':
+                    case 'POP':
+                    case 'INC':
+                    case 'DEC':
+                        return 2;
+                    case 'ADD':
+                    case 'SUB':
+                    case 'CMP':
+                        // Check if second operand is register or immediate
+                        var parts = line.split(/[\s,]+/);
+                        if (parts.length >= 3 && parts[2].match(/^[ABCD]$/i)) {
+                            return 2; // register + register
+                        } else {
+                            return 3; // register + immediate
+                        }
+                    case 'MOV':
+                        return 3; // opcode + register + immediate
+                    case 'JMP':
+                    case 'JZ':
+                    case 'JNZ':
+                    case 'CALL':
+                        return 3; // opcode + 16-bit address
+                    case 'LOAD':
+                    case 'STORE':
+                        // Check if second operand is register or immediate
+                        var parts = line.split(/[\s,]+/);
+                        if (parts.length >= 3 && parts[2].match(/^[ABCD]$/i)) {
+                            return 3; // opcode + register + register + high byte
+                        } else {
+                            return 4; // opcode + register + 16-bit address
+                        }
+                    default:
+                        throw new Error('Cannot determine instruction size for: "' + mnemonic + '". This should not happen - please report this error.');
+                }
+            }
+            
+            // Enhanced CPU execution loop with bounds checking
+            function executeInstruction() {
+                if (!cpu.running) {
+                    return;
+                }
+                
+                // Bounds checking
+                if (cpu.registers.PC >= MEMORY_SIZE) {
+                    updateStatus('ERROR: Program counter out of bounds (0x' + cpu.registers.PC.toString(16).toUpperCase().padStart(4, '0') + ')');
+                    cpu.running = false;
+                    stopEmulator();
+                    return;
+                }
+                
+                var opcode = cpu.memory[cpu.registers.PC];
+                var pc = cpu.registers.PC;
+                
+                try {
+                    switch (opcode) {
+                        case OPCODES.NOP:
+                            cpu.registers.PC++;
+                            break;
+                            
+                        case OPCODES.HLT:
+                            cpu.running = false;
+                            updateStatus('Program halted after ' + cpu.cycles + ' cycles');
+                            break;
+                            
+                        case OPCODES.MOV:
+                            executeMOV();
+                            break;
+                            
+                        case OPCODES.ADD:
+                            executeADD();
+                            break;
+                            
+                        case OPCODES.SUB:
+                            executeSUB();
+                            break;
+                            
+                        case OPCODES.CMP:
+                            executeCMP();
+                            break;
+                            
+                        case OPCODES.JMP:
+                            executeJMP();
+                            break;
+                            
+                        case OPCODES.JZ:
+                            executeJZ();
+                            break;
+                            
+                        case OPCODES.JNZ:
+                            executeJNZ();
+                            break;
+                            
+                        case OPCODES.LOAD:
+                            executeLOAD();
+                            break;
+                            
+                        case OPCODES.STORE:
+                            executeSTORE();
+                            break;
+                            
+                        case OPCODES.PUSH:
+                            executePUSH();
+                            break;
+                            
+                        case OPCODES.POP:
+                            executePOP();
+                            break;
+                            
+                        case OPCODES.CALL:
+                            executeCALL();
+                            break;
+                            
+                        case OPCODES.RET:
+                            executeRET();
+                            break;
+                            
+                        case OPCODES.INC:
+                            executeINC();
+                            break;
+                            
+                        case OPCODES.DEC:
+                            executeDEC();
+                            break;
+                            
+                        default:
+                            updateStatus('ERROR: Unknown opcode 0x' + opcode.toString(16).toUpperCase().padStart(2, '0') + ' at PC 0x' + pc.toString(16).toUpperCase().padStart(4, '0'));
+                            cpu.running = false;
+                            break;
+                    }
+                    
+                    cpu.cycles++;
+                    
+                    // Safety: Prevent infinite loops (max 10000 cycles)
+                    if (cpu.cycles > 10000) {
+                        updateStatus('ERROR: Maximum cycles exceeded (10000). Program may be stuck in infinite loop.');
+                        cpu.running = false;
+                        stopEmulator();
+                        return;
+                    }
+                    
+                    updateRegisters();
+                    
+                    // Update status to show current instruction
+                    if (cpu.running) {
+                        updateStatus('Emulator running... | ' + getCurrentInstruction());
+                    }
+                    
+                } catch (error) {
+                    updateStatus('EXECUTION ERROR: ' + error.message + ' at PC 0x' + pc.toString(16).toUpperCase().padStart(4, '0'));
+                    console.error('Execution error:', error);
+                    cpu.running = false;
+                }
+            }
+            
+            // Instruction implementations
+            function executeMOV() {
+                var destReg = cpu.memory[cpu.registers.PC + 1];
+                var value = cpu.memory[cpu.registers.PC + 2];
+                
+                switch (destReg) {
+                    case 0: cpu.registers.A = value; break;
+                    case 1: cpu.registers.B = value; break;
+                    case 2: cpu.registers.C = value; break;
+                    case 3: cpu.registers.D = value; break;
+                }
+                
+                cpu.registers.PC += 3;
+            }
+            
+            function executeADD() {
+                var destReg = cpu.memory[cpu.registers.PC + 1];
+                var srcOperand = cpu.memory[cpu.registers.PC + 2];
+                
+                var destValue = getRegisterValue(destReg);
+                var srcValue;
+                
+                // Check if second operand is register (0-3) or immediate value (4-255)
+                if (srcOperand <= 3) {
+                    // Register-to-register operation
+                    srcValue = getRegisterValue(srcOperand);
+                    cpu.registers.PC += 3;
+                } else {
+                    // Register-to-immediate operation
+                    srcValue = srcOperand;
+                    cpu.registers.PC += 3;
+                }
+                
+                var result = (destValue + srcValue) & 0xFF;
+                setRegisterValue(destReg, result);
+                updateFlags(result);
+            }
+            
+            function executeSUB() {
+                var destReg = cpu.memory[cpu.registers.PC + 1];
+                var srcReg = cpu.memory[cpu.registers.PC + 2];
+                
+                var destValue = getRegisterValue(destReg);
+                var srcValue = getRegisterValue(srcReg);
+                var result = (destValue - srcValue) & 0xFF;
+                
+                setRegisterValue(destReg, result);
+                updateFlags(result);
+                
+                cpu.registers.PC += 3;
+            }
+            
+            function executeCMP() {
+                var reg1 = cpu.memory[cpu.registers.PC + 1];
+                var reg2 = cpu.memory[cpu.registers.PC + 2];
+                
+                var val1 = getRegisterValue(reg1);
+                var val2 = getRegisterValue(reg2);
+                var result = (val1 - val2) & 0xFF;
+                
+                updateFlags(result);
+                
+                cpu.registers.PC += 3;
+            }
+            
+            function executeJMP() {
+                var addr = cpu.memory[cpu.registers.PC + 1] | (cpu.memory[cpu.registers.PC + 2] << 8);
+                
+                // Bounds checking for jump target
+                if (addr >= MEMORY_SIZE) {
+                    updateStatus('ERROR: Jump target out of bounds (0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ')');
+                    cpu.running = false;
+                    return;
+                }
+                
+                cpu.registers.PC = addr;
+            }
+            
+            function executeJZ() {
+                if ((cpu.registers.FLAGS & 0x01) !== 0) { // Zero flag
+                    var addr = cpu.memory[cpu.registers.PC + 1] | (cpu.memory[cpu.registers.PC + 2] << 8);
+                    
+                    // Bounds checking for jump target
+                    if (addr >= MEMORY_SIZE) {
+                        updateStatus('ERROR: JZ target out of bounds (0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ')');
+                        cpu.running = false;
+                        return;
+                    }
+                    
+                    cpu.registers.PC = addr;
+                } else {
+                    cpu.registers.PC += 3;
+                }
+            }
+            
+            function executeJNZ() {
+                if ((cpu.registers.FLAGS & 0x01) === 0) { // Not zero flag
+                    var addr = cpu.memory[cpu.registers.PC + 1] | (cpu.memory[cpu.registers.PC + 2] << 8);
+                    
+                    // Bounds checking for jump target
+                    if (addr >= MEMORY_SIZE) {
+                        updateStatus('ERROR: JNZ target out of bounds (0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ')');
+                        cpu.running = false;
+                        return;
+                    }
+                    
+                    cpu.registers.PC = addr;
+                } else {
+                    cpu.registers.PC += 3;
+                }
+            }
+            
+            function executeLOAD() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                var addr = cpu.memory[cpu.registers.PC + 2] | (cpu.memory[cpu.registers.PC + 3] << 8);
+                
+                // Bounds checking for memory read
+                if (addr >= MEMORY_SIZE) {
+                    updateStatus('ERROR: Memory read violation at address 0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ' (out of bounds)');
+                    cpu.running = false;
+                    return;
+                }
+                
+                // Memory protection check for read
+                if (addr >= 0x9000 && addr <= 0xEFFF) {
+                    updateStatus('ERROR: Memory read violation at address 0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ' (system memory)');
+                    cpu.running = false;
+                    return;
+                }
+                
+                var value = cpu.memory[addr];
+                setRegisterValue(reg, value);
+                
+                cpu.registers.PC += 4;
+            }
+            
+            function executeSTORE() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                var addrOperand = cpu.memory[cpu.registers.PC + 2];
+                var highByte = cpu.memory[cpu.registers.PC + 3];
+                
+                var addr;
+                var pcIncrement;
+                
+                // Check if second operand is register (0-3) or immediate address
+                if (addrOperand <= 3 && highByte === 0x00) {
+                    // Register-to-register operation (address stored in register)
+                    addr = getRegisterValue(addrOperand);
+                    pcIncrement = 3;
+                } else {
+                    // Immediate address
+                    addr = addrOperand | (highByte << 8);
+                    pcIncrement = 4;
+                }
+                
+                // Bounds checking for memory write
+                if (addr >= MEMORY_SIZE) {
+                    updateStatus('ERROR: Memory write violation at address 0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ' (out of bounds)');
+                    cpu.running = false;
+                    return;
+                }
+                
+                // Memory protection check
+                if (!isMemoryWritable(addr)) {
+                    updateStatus('ERROR: Memory write violation at address 0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ' (read-only)');
+                    cpu.running = false;
+                    return;
+                }
+                
+                var value = getRegisterValue(reg);
+                cpu.memory[addr] = value;
+                
+                // Update display if writing to graphics memory
+                if (addr >= DISPLAY_START && addr <= DISPLAY_START + DISPLAY_WIDTH * DISPLAY_HEIGHT) {
+                    updateDisplay();
+                }
+                
+                cpu.registers.PC += pcIncrement;
+            }
+            
+            function executePUSH() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                var value = getRegisterValue(reg);
+                
+                // Stack overflow protection
+                if (cpu.registers.SP <= 0xF000) {
+                    updateStatus('ERROR: Stack overflow! SP = 0x' + cpu.registers.SP.toString(16).toUpperCase().padStart(4, '0'));
+                    cpu.running = false;
+                    return;
+                }
+                
+                cpu.registers.SP--;
+                cpu.memory[cpu.registers.SP] = value;
+                
+                cpu.registers.PC += 2;
+            }
+            
+            function executePOP() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                
+                // Stack underflow protection
+                if (cpu.registers.SP >= STACK_START) {
+                    updateStatus('ERROR: Stack underflow! SP = 0x' + cpu.registers.SP.toString(16).toUpperCase().padStart(4, '0'));
+                    cpu.running = false;
+                    return;
+                }
+                
+                var value = cpu.memory[cpu.registers.SP];
+                setRegisterValue(reg, value);
+                cpu.registers.SP++;
+                
+                cpu.registers.PC += 2;
+            }
+            
+            function executeCALL() {
+                var addr = cpu.memory[cpu.registers.PC + 1] | (cpu.memory[cpu.registers.PC + 2] << 8);
+                
+                // Bounds checking for call target
+                if (addr >= MEMORY_SIZE) {
+                    updateStatus('ERROR: CALL target out of bounds (0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ')');
+                    cpu.running = false;
+                    return;
+                }
+                
+                // Stack overflow protection for CALL
+                if (cpu.registers.SP <= 0xF000) {
+                    updateStatus('ERROR: Stack overflow during CALL! SP = 0x' + cpu.registers.SP.toString(16).toUpperCase().padStart(4, '0'));
+                    cpu.running = false;
+                    return;
+                }
+                
+                // Push return address
+                cpu.registers.SP--;
+                cpu.memory[cpu.registers.SP] = (cpu.registers.PC + 3) & 0xFF;
+                cpu.registers.SP--;
+                cpu.memory[cpu.registers.SP] = ((cpu.registers.PC + 3) >> 8) & 0xFF;
+                
+                cpu.registers.PC = addr;
+            }
+            
+            function executeRET() {
+                // Stack underflow protection for RET
+                if (cpu.registers.SP >= STACK_START - 1) {
+                    updateStatus('ERROR: Stack underflow during RET! SP = 0x' + cpu.registers.SP.toString(16).toUpperCase().padStart(4, '0'));
+                    cpu.running = false;
+                    return;
+                }
+                
+                var addr = cpu.memory[cpu.registers.SP] | (cpu.memory[cpu.registers.SP + 1] << 8);
+                
+                // Bounds checking for return target
+                if (addr >= MEMORY_SIZE) {
+                    updateStatus('ERROR: RET target out of bounds (0x' + addr.toString(16).toUpperCase().padStart(4, '0') + ')');
+                    cpu.running = false;
+                    return;
+                }
+                
+                cpu.registers.SP += 2;
+                cpu.registers.PC = addr;
+            }
+            
+            function executeINC() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                var value = getRegisterValue(reg);
+                var result = (value + 1) & 0xFF;
+                
+                setRegisterValue(reg, result);
+                updateFlags(result);
+                
+                cpu.registers.PC += 2;
+            }
+            
+            function executeDEC() {
+                var reg = cpu.memory[cpu.registers.PC + 1];
+                var value = getRegisterValue(reg);
+                var result = (value - 1) & 0xFF;
+                
+                setRegisterValue(reg, result);
+                updateFlags(result);
+                
+                cpu.registers.PC += 2;
+            }
+            
+            // Helper functions
+            function getRegisterValue(regCode) {
+                switch (regCode) {
+                    case 0: return cpu.registers.A;
+                    case 1: return cpu.registers.B;
+                    case 2: return cpu.registers.C;
+                    case 3: return cpu.registers.D;
+                    default: return 0;
+                }
+            }
+            
+            function setRegisterValue(regCode, value) {
+                switch (regCode) {
+                    case 0: cpu.registers.A = value; break;
+                    case 1: cpu.registers.B = value; break;
+                    case 2: cpu.registers.C = value; break;
+                    case 3: cpu.registers.D = value; break;
+                }
+            }
+            
+            function updateFlags(value) {
+                cpu.registers.FLAGS = 0;
+                if (value === 0) cpu.registers.FLAGS |= 0x01; // Zero flag
+                if (value > 127) cpu.registers.FLAGS |= 0x02; // Negative flag
+                if (value === 0xFF) cpu.registers.FLAGS |= 0x04; // Overflow flag
+            }
+            
+            // Emulator control functions
+            function runEmulator() {
+                if (cpu.running) return;
+                
+                cpu.running = true;
+                cpu.stepMode = false;
+                
+                if (executionInterval) {
+                    clearInterval(executionInterval);
+                }
+                
+                executionInterval = setInterval(executeInstruction, executionSpeed);
+                updateStatus('Emulator running... | ' + getCurrentInstruction());
+                updateButtons();
+            }
+            
+            function stepEmulator() {
+                if (cpu.running && !cpu.stepMode) {
+                    stopEmulator();
+                    cpu.stepMode = true;
+                }
+                
+                if (cpu.stepMode) {
+                    executeInstruction();
+                    if (!cpu.running) {
+                        updateStatus('Program completed or halted after ' + cpu.cycles + ' cycles');
+                    }
+                }
+            }
+            
+            function stopEmulator() {
+                cpu.running = false;
+                if (executionInterval) {
+                    clearInterval(executionInterval);
+                    executionInterval = null;
+                }
+                updateButtons();
+            }
+            
+            function resetEmulator() {
+                stopEmulator();
+                
+                // Reset CPU state
+                cpu.registers.A = 0;
+                cpu.registers.B = 0;
+                cpu.registers.C = 0;
+                cpu.registers.D = 0;
+                cpu.registers.PC = 0;
+                cpu.registers.SP = STACK_START;
+                cpu.registers.FLAGS = 0;
+                cpu.cycles = 0;
+                cpu.stepMode = false;
+                
+                // DON'T clear memory here - it will erase the assembled program!
+                // Only clear memory during initial assembly
+                
+                // Clear display
+                clearDisplay();
+                
+                updateRegisters();
+                updateMemoryView();
+                updateStatus('Emulator reset');
+                updateButtons();
+            }
+            
+            function clearCode() {
+                elements.codeEditor.value = '';
+                updateStatus('Code editor cleared');
+            }
+            
+            // UI update functions
+            function updateRegisters() {
+                elements.regA.textContent = cpu.registers.A.toString(16).toUpperCase().padStart(2, '0');
+                elements.regB.textContent = cpu.registers.B.toString(16).toUpperCase().padStart(2, '0');
+                elements.regC.textContent = cpu.registers.C.toString(16).toUpperCase().padStart(2, '0');
+                elements.regD.textContent = cpu.registers.D.toString(16).toUpperCase().padStart(2, '0');
+                elements.regPC.textContent = cpu.registers.PC.toString(16).toUpperCase().padStart(4, '0');
+                elements.regSP.textContent = cpu.registers.SP.toString(16).toUpperCase().padStart(4, '0');
+                elements.regFlags.textContent = cpu.registers.FLAGS.toString(16).toUpperCase().padStart(2, '0');
+                elements.regCycles.textContent = cpu.cycles.toString();
+            }
+            
+            function updateMemoryView() {
+                var html = '';
+                var lines = 32; // Show 32 lines of memory
+                
+                for (var i = 0; i < lines; i++) {
+                    var addr = i * 16;
+                    var line = '<div class="memory-line">';
+                    line += '<span class="memory-address">' + addr.toString(16).toUpperCase().padStart(4, '0') + ':</span>';
+                    line += '<span class="memory-data">';
+                    
+                    var ascii = '';
+                    for (var j = 0; j < 16; j++) {
+                        var byte = cpu.memory[addr + j];
+                        line += byte.toString(16).toUpperCase().padStart(2, '0') + ' ';
+                        
+                        // Convert to ASCII for display
+                        if (byte >= 32 && byte <= 126) {
+                            ascii += String.fromCharCode(byte);
+                        } else {
+                            ascii += '.';
+                        }
+                    }
+                    
+                    line += '</span>';
+                    line += '<span class="memory-ascii">' + ascii + '</span>';
+                    line += '</div>';
+                    
+                    html += line;
+                }
+                
+                elements.memoryView.innerHTML = html;
+            }
+            
+            function updateDisplay() {
+                var canvas = elements.displayCanvas;
+                var ctx = canvas.getContext('2d');
+                var imageData = ctx.createImageData(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+                var data = imageData.data;
+                
+                for (var y = 0; y < DISPLAY_HEIGHT; y++) {
+                    for (var x = 0; x < DISPLAY_WIDTH; x++) {
+                        var addr = DISPLAY_START + y * DISPLAY_WIDTH + x;
+                        var pixel = cpu.memory[addr];
+                        
+                        var index = (y * DISPLAY_WIDTH + x) * 4;
+                        data[index] = pixel;     // Red
+                        data[index + 1] = pixel; // Green
+                        data[index + 2] = pixel; // Blue
+                        data[index + 3] = 255;   // Alpha
+                    }
+                }
+                
+                ctx.putImageData(imageData, 0, 0);
+            }
+            
+            function clearDisplay() {
+                var canvas = elements.displayCanvas;
+                var ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            function updateButtons() {
+                elements.runBtn.disabled = cpu.running;
+                elements.stepBtn.disabled = cpu.running && !cpu.stepMode;
+                elements.resetBtn.disabled = false;
+                elements.assembleBtn.disabled = cpu.running;
+            }
+            
+            function updateStatus(message) {
+                elements.statusBar.textContent = message;
+            }
+            
+            // Enhanced status with performance info
+            function updateStatusWithStats(message) {
+                var stats = '';
+                if (performanceStats.startTime > 0) {
+                    var duration = Date.now() - performanceStats.startTime;
+                    var ips = performanceStats.instructionsExecuted / (duration / 1000);
+                    stats = ' | IPS: ' + Math.round(ips) + ' | Errors: ' + performanceStats.errors;
+                }
+                elements.statusBar.textContent = message + stats;
+            }
+            
+            // Performance monitoring functions
+            function startPerformanceMonitoring() {
+                performanceStats.startTime = Date.now();
+                performanceStats.instructionsExecuted = 0;
+                performanceStats.memoryAccesses = 0;
+                performanceStats.errors = 0;
+                performanceStats.warnings = 0;
+            }
+            
+            function recordMemoryAccess() {
+                performanceStats.memoryAccesses++;
+            }
+            
+            function recordError() {
+                performanceStats.errors++;
+            }
+            
+            // Debug function to show current instruction
+            function getCurrentInstruction() {
+                var pc = cpu.registers.PC;
+                var opcode = cpu.memory[pc];
+                var opcodeName = 'UNKNOWN';
+                
+                for (var name in OPCODES) {
+                    if (OPCODES[name] === opcode) {
+                        opcodeName = name;
+                        break;
+                    }
+                }
+                
+                return 'PC: 0x' + pc.toString(16).toUpperCase().padStart(4, '0') + 
+                       ' | Opcode: 0x' + opcode.toString(16).toUpperCase().padStart(2, '0') + 
+                       ' (' + opcodeName + ')';
+            }
+            
+            // Validation and restriction functions
+            function validateAssemblyCode(code) {
+                var errors = [];
+                var warnings = [];
+                var lines = code.split('\n');
+                
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].trim();
+                    var lineNum = i + 1;
+                    
+                    if (!line || line.indexOf(';') === 0) continue;
+                    
+                    // Check for unsupported features
+                    if (line.indexOf('FLOAT') !== -1 || line.indexOf('DOUBLE') !== -1) {
+                        errors.push('Line ' + lineNum + ': Floating point not supported');
+                    }
+                    
+                    if (line.indexOf('STRING') !== -1 || line.indexOf('"') !== -1) {
+                        errors.push('Line ' + lineNum + ': String literals not supported');
+                    }
+                    
+                    if (line.indexOf('ARRAY') !== -1 || line.indexOf('[') !== -1) {
+                        errors.push('Line ' + lineNum + ': Arrays not supported');
+                    }
+                    
+                    // Check for complex addressing modes
+                    if (line.indexOf('[') !== -1 && line.indexOf(']') !== -1) {
+                        errors.push('Line ' + lineNum + ': Indirect addressing not supported');
+                    }
+                    
+                    // Check for unsupported instructions (skip labels)
+                    var parts = line.split(/[\s,]+/);
+                    var mnemonic = parts[0].toUpperCase();
+                    // Skip validation if it's a label (contains colon)
+                    if (mnemonic && !mnemonic.includes(':') && !OPCODES[mnemonic] && mnemonic !== 'NOP') {
+                        errors.push('Line ' + lineNum + ': Unsupported instruction "' + mnemonic + '"');
+                    }
+                    
+                    // Check for large immediate values
+                    for (var j = 1; j < parts.length; j++) {
+                        var operand = parts[j];
+                        if (!isNaN(operand) && parseInt(operand) > 255) {
+                            warnings.push('Line ' + lineNum + ': Value ' + operand + ' exceeds 8-bit range (0-255)');
+                        }
+                    }
+                }
+                
+                return { errors: errors, warnings: warnings };
+            }
+            
+            // Memory protection and bounds checking
+            function isMemoryWritable(addr) {
+                // Program memory (0x0000-0x7FFF) - read/write
+                if (addr >= 0x0000 && addr <= 0x7FFF) return true;
+                
+                // Graphics memory (0x8000-0x8FFF) - read/write
+                if (addr >= 0x8000 && addr <= 0x8FFF) return true;
+                
+                // Stack memory (0xF000-0xFFFF) - read/write
+                if (addr >= 0xF000 && addr <= 0xFFFF) return true;
+                
+                // System memory (0x9000-0xEFFF) - read-only
+                return false;
+            }
+            
+            // Enhanced error reporting
+            function showAssemblyHelp() {
+                var helpText = 
+                    '=== TINY VM ASSEMBLY GUIDE ===\n\n' +
+                    'SUPPORTED INSTRUCTIONS:\n' +
+                    '• MOV A, 42     (Move immediate to register)\n' +
+                    '• ADD A, B      (Add registers)\n' +
+                    '• SUB A, B      (Subtract registers)\n' +
+                    '• CMP A, B      (Compare registers)\n' +
+                    '• JMP label     (Jump to label)\n' +
+                    '• JZ label      (Jump if zero)\n' +
+                    '• JNZ label     (Jump if not zero)\n' +
+                    '• LOAD A, addr  (Load from memory)\n' +
+                    '• STORE A, addr (Store register A to memory address)\n' +
+                    '• PUSH A        (Push register to stack)\n' +
+                    '• POP A         (Pop from stack to register)\n' +
+                    '• CALL label    (Call subroutine)\n' +
+                    '• RET           (Return from subroutine)\n' +
+                    '• INC A         (Increment register)\n' +
+                    '• DEC A         (Decrement register)\n' +
+                    '• HLT           (Halt execution)\n\n' +
+                    'RESTRICTIONS:\n' +
+                    '• Only 8-bit values (0-255)\n' +
+                    '• No floating point\n' +
+                    '• No strings or arrays\n' +
+                    '• No indirect addressing\n' +
+                    '• Limited to 64KB memory\n\n' +
+                    'EXAMPLE PROGRAMS:\n' +
+                    '; Counter to 10\n' +
+                    'MOV A, 0\n' +
+                    'COUNT: INC A\n' +
+                    'CMP A, 10\n' +
+                    'JNZ COUNT\n' +
+                    'HLT\n\n' +
+                    '; Add two numbers\n' +
+                    'MOV A, 42\n' +
+                    'MOV B, 10\n' +
+                    'ADD A, B\n' +
+                    'HLT';
+                
+                elements.codeEditor.value = helpText;
+                updateStatus('Assembly guide loaded. Click Assemble to validate.');
+            }
+            
+            // Sample programs for users to try
+            function showSamplePrograms() {
+                var samples = [
+                    {
+                        name: 'Simple Counter',
+                        description: 'Count from 0 to 10',
+                        code: '; Simple Counter\nMOV A, 0\nCOUNT: INC A\nCMP A, 10\nJNZ COUNT\nHLT'
+                    },
+                    {
+                        name: 'Addition',
+                        description: 'Add two numbers (42 + 10)',
+                        code: '; Add two numbers\nMOV A, 42\nMOV B, 10\nADD A, B\nHLT'
+                    },
+                    {
+                        name: 'Fibonacci',
+                        description: 'Generate Fibonacci sequence',
+                        code: '; Fibonacci sequence\nMOV A, 1\nMOV B, 1\nMOV C, 0\nFIB: MOV C, A\nADD A, B\nMOV B, C\nCMP A, 100\nJNZ FIB\nHLT'
+                    },
+                    {
+                        name: 'Graphics Demo',
+                        description: 'Draw a pattern on screen',
+                        code: '; Graphics demo - draw white pixels\n; Draw pattern on first 10 pixels\nMOV A, 0\nMOV B, 0xFF\nDRAW: STORE B, 0x8000\nSTORE B, 0x8001\nSTORE B, 0x8002\nSTORE B, 0x8003\nSTORE B, 0x8004\nSTORE B, 0x8005\nSTORE B, 0x8006\nSTORE B, 0x8007\nSTORE B, 0x8008\nSTORE B, 0x8009\nHLT'
+                    },
+                    {
+                        name: 'Stack Test',
+                        description: 'Test push/pop operations',
+                        code: '; Stack operations test\nMOV A, 42\nPUSH A\nMOV A, 0\nPOP A\nHLT'
+                    },
+                    {
+                        name: 'Simple Graphics',
+                        description: 'Draw single white pixel',
+                        code: '; Simple graphics - draw one white pixel\nMOV A, 0xFF\nSTORE A, 0x80\nHLT'
+                    },
+                    {
+                        name: 'Simple Graphics',
+                        description: 'Draw simple pattern',
+                        code: '; Simple graphics test\n; Draw a few white pixels\nMOV A, 0xFF\nSTORE A, 0x8000\nSTORE A, 0x8001\nSTORE A, 0x8040\nSTORE A, 0x8041\nHLT'
+                    }
+                ];
+                
+                var sampleList = '=== SAMPLE PROGRAMS ===\n\n';
+                for (var i = 0; i < samples.length; i++) {
+                    sampleList += (i + 1) + '. ' + samples[i].name + '\n';
+                    sampleList += '   ' + samples[i].description + '\n\n';
+                }
+                sampleList += 'Click a number to load that program, or Cancel to keep current code.';
+                
+                var choice = prompt(sampleList);
+                if (choice && !isNaN(choice) && choice >= 1 && choice <= samples.length) {
+                    elements.codeEditor.value = samples[choice - 1].code;
+                    updateStatus('Sample program "' + samples[choice - 1].name + '" loaded. Click Assemble to run.');
+                }
+            }
+            
+            // Initialize the virtual machine when the page loads
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initVM);
+            } else {
+                initVM();
+            }
+            
+        })();
+    </script>
+</body>
+</html>
